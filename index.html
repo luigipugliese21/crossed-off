@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>crossed off.</title>
 <meta name="theme-color" content="#24493f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="crossed off">
+<meta name="format-detection" content="telephone=no">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='3' width='26' height='26' rx='4' fill='%23fbf5e6' stroke='%231d2433' stroke-width='2.5'/%3E%3Cpath d='M8 16l6 6L27 5' fill='none' stroke='%23e2412f' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -304,6 +311,21 @@ ul.lines{list-style:none;margin:0;padding:0;border-top:1px solid var(--rule);
   .wk-edit{padding-left:50px}
   .foot .keys{display:none}
 }
+/* iPhone: notch/home-bar safe areas, no tap flash, no zoom-on-focus */
+html{-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent}
+@media (max-width:760px){
+  body{padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);overscroll-behavior-y:none}
+  .notebook{margin-bottom:calc(96px + env(safe-area-inset-bottom))}
+  .toast{bottom:calc(86px + env(safe-area-inset-bottom))}
+  .num,.due-in,.write,.wk-in{font-size:16px}
+  .write{font-size:19px}
+  .del{opacity:.55}
+}
+@media (hover:none){
+  .chip:hover,.add-btn:hover,.star:hover,.swatch:hover{transform:none}
+  .wk:hover{background:none}
+  .del{opacity:.5}
+}
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}
 }
@@ -322,7 +344,7 @@ ul.lines{list-style:none;margin:0;padding:0;border-top:1px solid var(--rule);
   <header class="mast" id="mast"></header>
   <main id="page"></main>
   <footer class="foot">
-    <span>saved in this browser</span>
+    <span id="syncNote">saved in this browser</span>
     <button class="link" id="exportBtn">save a copy</button>
     <button class="link" id="importBtn">load a copy</button>
     <input type="file" id="importFile" accept="application/json,.json" hidden>
@@ -413,8 +435,9 @@ function load() {
   return seed();
 }
 let state = load();
-const save = () => localStorage.setItem(LS, JSON.stringify(state));
-save();
+const persist = () => localStorage.setItem(LS, JSON.stringify(state));
+const save = () => { persist(); syncDirty(); };
+persist();
 
 const ui = {
   view: location.hash.slice(1) || localStorage.getItem('crossedoff.view') || 'today',
@@ -586,9 +609,9 @@ function toast(text, onUndo) {
   const old = $('.toast'); if (old) old.remove();
   clearTimeout(toastTimer);
   const el = document.createElement('div'); el.className = 'toast'; el.setAttribute('role', 'status');
-  el.innerHTML = `<span class="t">${esc(text)}</span><button class="chip">undo</button>`;
+  el.innerHTML = `<span class="t">${esc(text)}</span>${onUndo ? '<button class="chip">undo</button>' : ''}`;
   const close = () => { el.classList.add('out'); setTimeout(() => el.remove(), 260); };
-  $('button', el).addEventListener('click', () => { clearTimeout(toastTimer); onUndo(); close(); });
+  if (onUndo) $('button', el).addEventListener('click', () => { clearTimeout(toastTimer); onUndo(); close(); });
   document.body.appendChild(el);
   toastTimer = setTimeout(close, 6000);
 }
@@ -1094,6 +1117,63 @@ $('#importFile').addEventListener('change', async e => {
 let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => layoutStrikes(), 150); });
 let dayStamp = T(); setInterval(() => { if (T() !== dayStamp) { dayStamp = T(); render(); } }, 60000);
 $('#ruler').innerHTML = Array.from({ length: 40 }, (_, i) => `<span>${i * 5}</span>`).join('');
+
+/* ═════════════ sync (only when served by server.py) ═════════════
+   One shared copy lives on the server; this browser keeps a local
+   copy so the notebook still opens offline, then catches up. */
+var SYNC = null;
+function syncNote(t) { const el = $('#syncNote'); if (el) el.textContent = t; }
+function syncDirty() {
+  if (!SYNC || !SYNC.on) return;
+  SYNC.dirty = true; localStorage.setItem('crossedoff.dirty', '1');
+  syncNote('syncing…');
+  clearTimeout(SYNC.timer); SYNC.timer = setTimeout(syncPush, 350);
+}
+function syncSetRev(r) { SYNC.rev = r; localStorage.setItem('crossedoff.rev', String(r)); }
+function syncClean() { SYNC.dirty = false; localStorage.removeItem('crossedoff.dirty'); }
+function syncAdopt(doc, why) {
+  if (editing || drag) { SYNC.later = true; return; }   // never yank the page mid-gesture
+  state = Object.assign(blank(), doc.state); persist(); syncSetRev(doc.rev); syncClean();
+  render(); syncNote('synced ✓');
+  if (why) toast(why);
+}
+async function syncPush(force) {
+  if (!SYNC.on) return;
+  if (SYNC.busy) { SYNC.again = true; return; }
+  SYNC.busy = true;
+  try {
+    const r = await fetch('api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base: SYNC.rev, state, force: !!force }) });
+    const j = await r.json();
+    if (r.ok) { syncSetRev(j.rev); syncClean(); syncNote('synced ✓'); }
+    else if (r.status === 409) syncAdopt(j, 'Your other device saved first — showing its version');
+    else syncNote('sync error — kept on this device');
+  } catch (e) { syncNote('offline — will sync later'); }
+  SYNC.busy = false;
+  if (SYNC.again) { SYNC.again = false; syncPush(); }
+}
+async function syncPull() {
+  if (!SYNC.on || SYNC.busy) return;
+  if (SYNC.dirty) return syncPush();                    // send ours first; a clash comes back as 409
+  try {
+    const r = await fetch('api/state', { cache: 'no-store' }); if (!r.ok) throw 0;
+    const doc = await r.json();
+    if (!doc.state) return syncPush(true);              // brand-new server: this notebook becomes the shared one
+    if (doc.rev !== SYNC.rev) syncAdopt(doc);
+    else syncNote('synced ✓');
+  } catch (e) { syncNote('offline — will sync later'); }
+}
+(async () => {
+  if (!/^https?:$/.test(location.protocol)) return;     // opened as a file: stay local-only
+  try { const r = await fetch('api/state', { cache: 'no-store' }); if (!r.ok) return; await r.json(); } catch (e) { return; }
+  SYNC = { on: true, rev: +localStorage.getItem('crossedoff.rev') || 0, dirty: localStorage.getItem('crossedoff.dirty') === '1',
+           timer: null, busy: false, again: false, later: false };
+  syncPull();
+  const wake = () => { if (document.visibilityState === 'visible') syncPull(); };
+  document.addEventListener('visibilitychange', wake);
+  addEventListener('focus', wake); addEventListener('online', wake); addEventListener('pageshow', wake);
+  setInterval(() => { if (SYNC.later && !editing && !drag) { SYNC.later = false; syncPull(); } else wake(); }, 15000);
+})();
 
 if (!V[ui.view]) ui.view = 'today';
 render();
