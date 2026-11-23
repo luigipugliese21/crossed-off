@@ -190,6 +190,25 @@ ul.lines{list-style:none;margin:0;padding:0;border-top:1px solid var(--rule);
   border:1.8px solid var(--ink);border-radius:58% 42% 55% 45%/48% 58% 42% 52%;box-shadow:1.5px 2px 0 var(--ink)}
 .sub-plus:active{transform:translate(1.5px,2px);box-shadow:none}
 
+/* ── sync card ───────────────────────────────────── */
+.sheet{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:16px;background:rgba(18,36,31,.6)}
+.sheet[hidden]{display:none}
+.card{position:relative;width:min(440px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:22px 24px 20px;
+  background:var(--noise),var(--paper);border:2px solid var(--ink);border-radius:4px 12px 6px 14px;box-shadow:5px 6px 0 var(--ink);
+  font-size:18px;line-height:1.35}
+.card h2{margin:0 0 6px;font:800 32px/1 'Fraunces',serif;font-variation-settings:"WONK" 1;letter-spacing:-.03em;text-shadow:3px 2px 0 var(--sky)}
+.card p{margin:8px 0}
+.card .small{font:11.5px/1.55 'Space Mono',monospace;color:var(--ink-soft)}
+.card .small a{color:var(--blue)}
+.card label{display:block;margin-top:12px;font:700 10.5px 'Space Mono',monospace;text-transform:uppercase;letter-spacing:.12em;color:var(--ink-soft)}
+.card .field{display:block;width:100%;margin-top:4px;font-size:14px;padding:7px 9px}
+.card .row{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin-top:16px}
+.card .x{position:absolute;top:6px;right:8px;opacity:.6}
+.card .qr{display:grid;place-items:center;margin:12px 0 4px;min-height:60px}
+.card .qr svg{width:220px;height:220px;background:#fff;border:2px solid var(--ink);border-radius:6px}
+.card .bad{color:var(--red)}
+.foot .bad{color:var(--red);font-weight:700}
+
 /* moments */
 .item.fresh .wrap{animation:writein .65s cubic-bezier(.4,0,.2,1) both}
 @keyframes writein{from{clip-path:inset(-4px 100% -4px 0)}to{clip-path:inset(-4px -20px -4px 0)}}
@@ -350,13 +369,15 @@ ul.lines{list-style:none;margin:0;padding:0;border-top:1px solid var(--rule);
   <header class="mast" id="mast"></header>
   <main id="page"></main>
   <footer class="foot">
-    <span>saved in this browser</span>
+    <span id="syncState">saved in this browser</span>
+    <button class="link" id="syncBtn">sync</button>
     <button class="link" id="exportBtn">save a copy</button>
     <button class="link" id="importBtn">load a copy</button>
     <input type="file" id="importFile" accept="application/json,.json" hidden>
     <span class="keys"><span class="kbd">N</span> new line · <span class="kbd">1</span>–<span class="kbd">5</span> flip pages</span>
   </footer>
 </div>
+<div class="sheet" id="syncSheet" hidden><div class="card" role="dialog" aria-label="Sync" id="syncCard"></div></div>
 
 <script>
 'use strict';
@@ -411,7 +432,7 @@ const VIEWS = [
 
 /* ═════════════ state ═════════════ */
 const LS = 'crossedoff.v1';
-const blank = () => ({ todos: [], chores: [], deadlines: [], weeks: {}, tally: {} });
+const blank = () => ({ todos: [], chores: [], deadlines: [], weeks: {}, tally: {}, tallies: {}, gone: {} });
 function seed() {
   const t = today(), now = Date.now(), s = blank();
   const td = (text, extra = {}) => ({ id: uid(), text, created: now, done: null, star: false, ...extra });
@@ -442,8 +463,40 @@ function load() {
   return seed();
 }
 let state = load();
-const save = () => localStorage.setItem(LS, JSON.stringify(state));
-save();
+
+// change tracking for sync: every save stamps what changed (mod) and what vanished (gone)
+const KINDS = ['todos', 'chores', 'deadlines'];
+const DEV = localStorage.getItem('crossedoff.dev') || (() => { const d = uid(); localStorage.setItem('crossedoff.dev', d); return d; })();
+let snapMap = new Map();
+const sig = x => { const { mod, ...rest } = x; return JSON.stringify(rest); };
+function tracked(s) {
+  const out = [];
+  KINDS.forEach(k => s[k].forEach(x => out.push([x.id, x])));
+  Object.entries(s.weeks).forEach(([k, v]) => out.push(['w:' + k, v]));
+  return out;
+}
+function snap() { snapMap = new Map(tracked(state).map(([k, x]) => [k, sig(x)])); }
+function stamp() {
+  const now = Date.now(), seen = new Set();
+  state.gone = state.gone || {};
+  for (const [k, x] of tracked(state)) {
+    seen.add(k);
+    const old = snapMap.get(k);
+    if (old !== sig(x)) x.mod = now;
+    if (old === undefined) delete state.gone[k];
+  }
+  for (const k of snapMap.keys()) if (!seen.has(k)) state.gone[k] = now;
+}
+const persist = () => localStorage.setItem(LS, JSON.stringify(state));
+const save = () => { stamp(); snap(); persist(); Sync.touch(); };
+snap(); persist();
+
+// a link from another device can carry the sync setup in its #fragment (never sent to any server)
+let syncInvite = null;
+if (location.hash.startsWith('#sync=')) {
+  try { syncInvite = JSON.parse(atob(location.hash.slice(6).replace(/-/g, '+').replace(/_/g, '/'))); } catch (e) {}
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+}
 
 const ui = {
   view: location.hash.slice(1) || localStorage.getItem('crossedoff.view') || 'today',
@@ -455,7 +508,9 @@ const ui = {
 };
 const saveLists = () => localStorage.setItem('crossedoff.lists', JSON.stringify([...ui.openLists]));
 const T = () => ymd(today());
-const bump = n => { const k = T(); state.tally[k] = Math.max(0, (state.tally[k] || 0) + n); };
+const bump = n => { const k = T(); state.tally[k] = (state.tally[k] || 0) + n; };
+// crossed-off count for a day = this device's tally + every other synced device's
+const tallyOn = k => Math.max(0, (state.tally[k] || 0) + Object.values(state.tallies || {}).reduce((a, t) => a + ((t && t[k]) || 0), 0));
 
 /* ═════════════ sound (all synthesized, no files) ═════════════ */
 const Sound = {
@@ -906,8 +961,8 @@ const page = $('#page'), mast = $('#mast'), tabs = $('#tabs'), book = $('#book')
 let lastTally = null, renderTimer = null, editing = false, drag = null;
 
 function renderMast() {
-  const n = state.tally[T()] || 0, mon = mondayOf(today());
-  let week = 0; for (let i = 0; i < 7; i++) week += state.tally[ymd(addDays(mon, i))] || 0;
+  const n = tallyOn(T()), mon = mondayOf(today());
+  let week = 0; for (let i = 0; i < 7; i++) week += tallyOn(ymd(addDays(mon, i)));
   const fresh = lastTally !== null && n > lastTally; lastTally = n;
   mast.innerHTML = `<div class="brand">crossed <span class="off">off</span>.</div>
     <div class="tallybox"><div class="lbl">crossed off today<br><b>${n}</b> today · <b>${week}</b> this week</div>${tallySVG(n, fresh)}</div>
@@ -942,7 +997,7 @@ function scheduleRender(ms = 1400) {
   clearTimeout(renderTimer);
   renderTimer = setTimeout(() => {
     const a = document.activeElement;
-    if (drag || editing || (a && a.matches('.sub-in') && a.value)) return scheduleRender(500);
+    if (drag || editing || (a && a.matches('.write') && a.value)) return scheduleRender(500);
     render();
   }, ms);
 }
@@ -1057,6 +1112,197 @@ function saveWeek(k, color) {
   state.weeks[k] = { label, color: color || (prev && prev.color) || 'yellow' };
   ui.openWeek = null; save(); Sound.scratch(0.2); render();
 }
+
+/* ═════════════ sync (one JSON file in a private GitHub repo) ═════════════ */
+const modOf = x => x.mod || x.created || 0;
+const byId = a => [...a].sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+const norm = d => ({ v: 1, todos: byId(d.todos || []), chores: byId(d.chores || []), deadlines: byId(d.deadlines || []), weeks: d.weeks || {}, gone: d.gone || {}, tallies: d.tallies || {} });
+const docOf = s => norm({ ...s, tallies: { ...(s.tallies || {}), [DEV]: s.tally || {} } });
+const canon = d => JSON.stringify(d, (k, x) => x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(q => [q, x[q]])) : x);
+// newest edit of each line wins; a deletion wins over any older edit
+function mergeDocs(L, R) {
+  const now = Date.now(), gone = { ...R.gone }, out = blank();
+  for (const [k, t] of Object.entries(L.gone || {})) gone[k] = Math.max(gone[k] || 0, t);
+  const pick = (a, b) => !b ? a : !a ? b : modOf(b) > modOf(a) ? b : a;
+  const dead = (k, x) => gone[k] >= modOf(x);
+  KINDS.forEach(kind => {
+    const rem = new Map(R[kind].map(x => [x.id, x])), used = new Set();
+    L[kind].forEach(x => { used.add(x.id); const w = pick(x, rem.get(x.id)); if (!dead(x.id, w)) out[kind].push(w); });
+    [...rem.values()].filter(x => !used.has(x.id) && !dead(x.id, x)).sort((a, b) => (a.created || 0) - (b.created || 0)).forEach(x => out[kind].push(x));
+  });
+  new Set([...Object.keys(L.weeks), ...Object.keys(R.weeks)]).forEach(k => {
+    const w = pick(L.weeks[k], R.weeks[k]); if (!dead('w:' + k, w)) out.weeks[k] = w;
+  });
+  for (const [k, t] of Object.entries(gone)) if (now - t < 90 * 864e5) out.gone[k] = t;
+  out.tally = L.tally || {};
+  out.tallies = { ...R.tallies }; delete out.tallies[DEV];
+  return out;
+}
+const b64 = s => { let b = ''; new TextEncoder().encode(s).forEach(c => b += String.fromCharCode(c)); return btoa(b); };
+const unb64 = s => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\s/g, '')), c => c.charCodeAt(0)));
+
+const Sync = {
+  cfg: null, busy: false, again: false, etag: null, sha: null, remote: null, status: 'off', last: 0, err: '', timer: null, choice: null, strangers: 0,
+  init() {
+    try { this.cfg = JSON.parse(localStorage.getItem('crossedoff.sync')); } catch (e) {}
+    if (syncInvite && syncInvite.r && syncInvite.t) {
+      const same = this.cfg && this.cfg.repo === syncInvite.r;
+      this.cfg = { repo: syncInvite.r, token: syncInvite.t, file: syncInvite.f, joined: same && this.cfg.joined };
+      this.store();
+    }
+    if (this.cfg) this.set('wait');
+    this.run();
+    setInterval(() => { if (document.visibilityState === 'visible') this.run(); }, 20000);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' || this.timer) this.run(); });
+    addEventListener('online', () => this.run());
+    addEventListener('offline', () => { if (this.cfg) this.set('offline'); });
+  },
+  store() { this.cfg ? localStorage.setItem('crossedoff.sync', JSON.stringify(this.cfg)) : localStorage.removeItem('crossedoff.sync'); },
+  reset() { this.etag = this.sha = this.remote = this.choice = null; },
+  set(status) {
+    this.status = status;
+    const t = new Date(this.last), el = $('#syncState');
+    if (el) el.textContent = { off: 'saved in this browser', wait: 'syncing…', ok: `synced · ${pad(t.getHours())}:${pad(t.getMinutes())}`, err: 'sync trouble', offline: 'offline · will sync later', choose: 'sync needs an answer' }[status];
+    if (el) el.classList.toggle('bad', status === 'err' || status === 'choose');
+    renderSync();
+  },
+  touch() { if (!this.cfg) return; clearTimeout(this.timer); this.timer = setTimeout(() => this.run(), 2500); },
+  url() { return `https://api.github.com/repos/${this.cfg.repo}/contents/${this.cfg.file || 'notebook.json'}`; },
+  head(extra) { return { Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + this.cfg.token, 'X-GitHub-Api-Version': '2022-11-28', ...extra }; },
+  async fail(r) {
+    let m = ''; try { m = (await r.json()).message || ''; } catch (e) {}
+    if (r.status === 401) return new Error('GitHub did not accept the token. It may be mistyped or expired.');
+    if (r.status === 404 || r.status === 403) return new Error(`The token cannot write to ${this.cfg.repo}. Check the repo name, and that the token has "Contents: read and write" on it.` + (m ? ` (${m})` : ''));
+    return new Error(`GitHub said ${r.status}${m ? ': ' + m : ''}`);
+  },
+  async pull(fresh) {
+    const r = await fetch(this.url(), { headers: this.head(!fresh && this.etag ? { 'If-None-Match': this.etag } : {}), cache: 'no-store' });
+    if (r.status === 304) return this.remote;
+    if (r.status === 404) { this.reset(); return null; }
+    if (!r.ok) throw await this.fail(r);
+    const j = await r.json();
+    this.sha = j.sha; this.etag = r.headers.get('ETag'); this.remote = norm(JSON.parse(unb64(j.content)));
+    return this.remote;
+  },
+  async push(doc) {
+    const body = { message: `sync from ${DEV}`, content: b64(JSON.stringify(doc)) };
+    if (this.sha) body.sha = this.sha;
+    const r = await fetch(this.url(), { method: 'PUT', headers: this.head({ 'Content-Type': 'application/json' }), body: JSON.stringify(body), keepalive: true });
+    if (r.status === 409 || r.status === 422) { this.etag = null; return false; }      // someone else wrote first → pull again
+    if (!r.ok) throw await this.fail(r);
+    this.sha = (await r.json()).content.sha; this.remote = doc; this.etag = null;
+    return true;
+  },
+  async run() {
+    clearTimeout(this.timer); this.timer = null;
+    if (!this.cfg) return;
+    if (this.busy) { this.again = true; return; }
+    if (navigator.onLine === false) return this.set('offline');
+    this.busy = true;
+    try {
+      let settled = false;
+      for (let i = 0; i < 5 && !settled; i++) {
+        const R = await this.pull(i > 0);
+        if (!R) { settled = await this.push(docOf(state)); continue; }
+        if (!this.cfg.joined) {
+          // first sync on this device: don't quietly mix its lines into the shared notebook
+          const known = new Set(KINDS.flatMap(k => R[k].map(x => x.id)));
+          this.strangers = KINDS.reduce((n, k) => n + state[k].filter(x => !known.has(x.id) && !R.gone[x.id]).length, 0);
+          if (this.strangers && !this.choice) { if (this.status !== 'choose') { this.set('choose'); openSync(); } return; }
+          if (this.choice === 'replace') { state = blank(); snap(); persist(); scheduleRender(0); }
+        }
+        const merged = mergeDocs(state, R), mc = canon(docOf(merged));
+        if (mc !== canon(docOf(state))) { state = merged; snap(); persist(); scheduleRender(0); }
+        settled = mc === canon(R) || await this.push(docOf(merged));
+      }
+      if (!settled) throw new Error('Could not finish syncing just now. It will try again.');
+      if (!this.cfg.joined) { this.cfg.joined = true; this.choice = null; this.store(); }
+      this.last = Date.now(); this.err = ''; this.set('ok');
+    } catch (e) {
+      this.err = e instanceof TypeError ? 'Could not reach GitHub. It will try again.' : e.message;
+      this.set(navigator.onLine === false ? 'offline' : 'err');
+    } finally {
+      this.busy = false;
+      if (this.again) { this.again = false; this.run(); }
+    }
+  },
+};
+
+const sheet = $('#syncSheet'), card = $('#syncCard');
+let showQR = false;
+function openSync() { sheet.hidden = false; renderSync(); }
+function closeSync() { sheet.hidden = true; showQR = false; }
+function inviteURL() {
+  const home = /^https?:$/.test(location.protocol) ? location.origin + location.pathname : `https://${Sync.cfg.repo.split('/')[0]}.github.io/crossed-off/`;
+  return home + '#sync=' + btoa(JSON.stringify({ r: Sync.cfg.repo, t: Sync.cfg.token })).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function drawQR() {
+  const box = $('#syQR'); if (!box) return;
+  const draw = () => { const q = window.qrcode(0, 'L'); q.addData(inviteURL()); q.make(); const b = $('#syQR'); if (b) b.innerHTML = q.createSvgTag(4, 12); };
+  if (window.qrcode) return draw();
+  const s = document.createElement('script');
+  s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
+  s.onload = draw; s.onerror = () => { const b = $('#syQR'); if (b) b.textContent = 'The QR code could not load. Use “copy link” instead.'; };
+  document.head.appendChild(s);
+}
+function renderSync() {
+  if (sheet.hidden) return;
+  const keep = id => { const e = $('#' + id, card); return e ? e.value : null; };
+  const repoV = keep('syRepo'), tokV = keep('syTok');
+  let h = `<button class="del x" data-s="close" aria-label="Close">${DEL_SVG}</button><h2>Sync</h2>`;
+  if (!Sync.cfg) {
+    const owner = /\.github\.io$/.test(location.hostname) ? location.hostname.split('.')[0] : 'luigipugliese21';
+    const mk = `https://github.com/settings/personal-access-tokens/new?name=crossed-off-sync&description=${encodeURIComponent('Lets the crossed off. app save its notebook')}&target_name=${owner}&expires_in=none&contents=write`;
+    h += `<p>Keep this notebook the same on your phone and laptop. It is saved to a private GitHub repo that only you can open.</p>
+      <label>Private repo<input class="due-in field" id="syRepo" value="${esc(repoV != null ? repoV : owner + '/crossed-off-data')}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <label>Access token<input class="due-in field" id="syTok" type="password" value="${esc(tokV || '')}" placeholder="github_pat_…" autocomplete="off"></label>
+      <p class="small"><a href="${mk}" target="_blank" rel="noopener">Make a token on GitHub</a>: pick “Only select repositories”, choose the data repo, and give it Contents: read and write. The token stays in this browser.</p>
+      <div class="row"><button class="chip on" data-s="connect">connect</button></div>`;
+  } else if (Sync.status === 'choose') {
+    h += `<p>This device has <b>${Sync.strangers}</b> line${Sync.strangers === 1 ? '' : 's'} that ${Sync.strangers === 1 ? 'is' : 'are'} not in your synced notebook.</p>
+      <p>What should happen to ${Sync.strangers === 1 ? 'it' : 'them'}?</p>
+      <div class="row"><button class="chip on" data-s="replace">use the synced notebook</button><button class="chip" data-s="combine">keep both</button></div>
+      <p class="small">“Use the synced notebook” drops what is on this device. “Keep both” adds this device's lines to the notebook everywhere.</p>`;
+  } else {
+    const t = new Date(Sync.last);
+    const line = Sync.status === 'err' ? `<p class="bad">${esc(Sync.err)}</p>`
+      : Sync.status === 'offline' ? '<p>Offline. Changes are kept here and sent when you are back online.</p>'
+      : Sync.status === 'ok' ? `<p>On. Last synced at ${pad(t.getHours())}:${pad(t.getMinutes())}.</p>` : '<p>Syncing…</p>';
+    h += `${line}<p class="small">Saved to ${esc(Sync.cfg.repo)}. Changes travel on their own within a few seconds.</p>`;
+    if (showQR) h += `<p>On the other device, scan this with the camera:</p><div class="qr" id="syQR">drawing…</div>
+      <p class="small">The code holds the key to your notebook, so do not share a photo of it.</p>
+      <div class="row"><button class="chip" data-s="copy">copy link</button><button class="link" data-s="hideqr">hide code</button></div>`;
+    else h += `<div class="row"><button class="chip on" data-s="invite">add another device</button><button class="chip" data-s="now">sync now</button><button class="link" data-s="off">turn off here</button></div>`;
+  }
+  card.innerHTML = h;
+  if (Sync.cfg && showQR && Sync.status !== 'choose') drawQR();
+}
+sheet.addEventListener('click', e => {
+  if (e.target === sheet) return closeSync();
+  const b = e.target.closest('[data-s]'); if (!b) return;
+  const a = b.dataset.s;
+  if (a === 'close') closeSync();
+  else if (a === 'connect') {
+    const repo = $('#syRepo', card).value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\/+$/, ''), token = $('#syTok', card).value.trim();
+    const bad = !/^[\w.-]+\/[\w.-]+$/.test(repo) ? $('#syRepo', card) : !token ? $('#syTok', card) : null;
+    if (bad) { bad.classList.remove('shake'); void bad.offsetWidth; bad.classList.add('shake'); bad.focus(); return; }
+    Sync.reset(); Sync.cfg = { repo, token, joined: false }; Sync.store(); Sync.set('wait'); Sync.run();
+  }
+  else if (a === 'replace' || a === 'combine') { Sync.choice = a; Sync.set('wait'); Sync.run(); }
+  else if (a === 'now') { Sync.set('wait'); Sync.run(); }
+  else if (a === 'invite') { showQR = true; renderSync(); }
+  else if (a === 'hideqr') { showQR = false; renderSync(); }
+  else if (a === 'copy') { const done = () => { b.textContent = 'copied'; }; navigator.clipboard ? navigator.clipboard.writeText(inviteURL()).then(done, () => prompt('Copy this link:', inviteURL())) : prompt('Copy this link:', inviteURL()); }
+  else if (a === 'off') {
+    if (!confirm('Stop syncing on this device? Everything stays here and in the synced notebook.')) return;
+    Sync.cfg = null; Sync.store(); Sync.reset(); showQR = false; Sync.set('off');
+  }
+});
+sheet.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeSync();
+  else if (e.key === 'Enter' && e.target.matches('#syRepo, #syTok')) { e.preventDefault(); $('[data-s="connect"]', card).click(); }
+});
+$('#syncBtn').addEventListener('click', openSync);
 
 /* ═════════════ events ═════════════ */
 page.addEventListener('click', e => {
@@ -1189,6 +1435,7 @@ $('#ruler').innerHTML = Array.from({ length: 40 }, (_, i) => `<span>${i * 5}</sp
 
 if (!V[ui.view]) ui.view = 'today';
 render();
+Sync.init();
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => layoutStrikes());
 </script>
 </body>
