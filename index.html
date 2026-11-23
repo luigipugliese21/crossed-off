@@ -164,6 +164,32 @@ ul.lines{list-style:none;margin:0;padding:0;border-top:1px solid var(--rule);
 .lv-latemet{color:var(--red);outline:2px solid var(--red);outline-offset:-2px;filter:url(#rough);transform:rotate(3deg)}
 .note{padding-left:64px;font-size:20px;line-height:var(--lh);color:var(--ink-soft)}
 
+/* ── a list tucked inside a line (groceries, steps…) ── */
+.lst{display:inline-flex;align-items:center;gap:5px;background:none;border:0;padding:3px 4px;cursor:pointer;
+  font:700 11px 'Space Mono',monospace;color:var(--ink-soft);opacity:.4;transition:opacity .2s,transform .2s,color .2s}
+.lst svg{width:15px;height:15px;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;fill:none}
+.lst.has,.lst.on,.item:hover .lst{opacity:1}
+.lst.on{color:var(--red)}
+.lst:hover{transform:rotate(-4deg) scale(1.1)}
+.subs{grid-column:2/-1;list-style:none;margin:0;padding:0 0 0 16px}
+.sub{display:grid;grid-template-columns:30px minmax(0,1fr) 30px;align-items:start;min-height:var(--lh);cursor:pointer;outline:none}
+.sub:focus-visible .sub-txt{background:color-mix(in srgb,var(--yellow) 40%,transparent)}
+.sub-box{height:var(--lh);display:grid;place-items:center}
+.sub-box svg{width:16px;height:16px;overflow:visible;transition:transform .15s}
+.sub:active .sub-box svg{transform:scale(.8) rotate(-6deg)}
+.sub-box .frame{fill:none;stroke:var(--ink);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sub-box .check{fill:none;stroke:var(--red);stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:34;stroke-dashoffset:34;transition:stroke-dashoffset .26s ease-out}
+.sub.on .sub-box .check{stroke-dashoffset:0}
+.sub-txt{font-size:19px;line-height:var(--lh);padding-left:4px;overflow-wrap:anywhere;user-select:none;-webkit-user-select:none}
+.sub-txt span{padding:0 4px;margin:0 -4px;background:linear-gradient(var(--red),var(--red)) no-repeat 0 58%/0 2.4px;
+  transition:background-size .34s cubic-bezier(.65,.05,.36,1),color .4s,opacity .4s}
+.sub.on .sub-txt span{background-size:100% 2.4px;color:var(--ink-soft);opacity:.75}
+.sub-new{display:flex;align-items:center;gap:8px;min-height:var(--lh);padding:0 6px 4px 34px}
+.sub-in{font-size:18px;flex:1 1 120px;border-bottom-width:1.5px}
+.sub-plus{width:28px;height:28px;flex:0 0 28px;display:grid;place-items:center;cursor:pointer;background:var(--vc);font:700 17px/1 'Space Mono';
+  border:1.8px solid var(--ink);border-radius:58% 42% 55% 45%/48% 58% 42% 52%;box-shadow:1.5px 2px 0 var(--ink)}
+.sub-plus:active{transform:translate(1.5px,2px);box-shadow:none}
+
 /* moments */
 .item.fresh .wrap{animation:writein .65s cubic-bezier(.4,0,.2,1) both}
 @keyframes writein{from{clip-path:inset(-4px 100% -4px 0)}to{clip-path:inset(-4px -20px -4px 0)}}
@@ -171,7 +197,7 @@ ul.lines{list-style:none;margin:0;padding:0;border-top:1px solid var(--rule);
 @keyframes thud{30%{transform:translateY(2px) scale(.996)}}
 .item.crumple{animation:crumple .4s cubic-bezier(.6,-.2,.7,.3) forwards;transform-origin:30% 50%}
 @keyframes crumple{to{transform:scale(.25) rotate(-18deg) translateY(14px);opacity:0;filter:blur(1px)}}
-.stamp{position:absolute;right:48px;top:50%;z-index:4;pointer-events:none;font:700 15px 'Space Mono',monospace;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap;
+.stamp{position:absolute;right:48px;top:calc(var(--lh) / 2);z-index:4;pointer-events:none;font:700 15px 'Space Mono',monospace;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap;
   color:var(--sc);border:3px solid currentColor;border-radius:6px;padding:1px 10px;background:color-mix(in srgb,var(--paper) 55%,transparent);
   filter:url(#rough);mix-blend-mode:multiply;animation:stamp .5s cubic-bezier(.2,1.5,.4,1) both}
 @keyframes stamp{0%{transform:translateY(-50%) rotate(var(--r)) scale(2.8);opacity:0}55%{opacity:.95;transform:translateY(-50%) rotate(var(--r)) scale(.9)}100%{transform:translateY(-50%) rotate(var(--r)) scale(1);opacity:.88}}
@@ -292,6 +318,8 @@ ul.lines{list-style:none;margin:0;padding:0;border-top:1px solid var(--rule);
   .meta{grid-column:2;grid-row:2;padding-left:12px;height:auto;min-height:26px;margin-top:-6px;margin-bottom:6px;flex-wrap:wrap}
   .del{grid-column:3;grid-row:1}
   .stamp{right:34px}
+  .subs{padding-left:10px}
+  .sub .del{grid-column:3;grid-row:1}
   .ticket{grid-template-columns:100px 1fr}
   .ticket{-webkit-mask:radial-gradient(circle at 100px 0,transparent 10px,#000 10.5px) top/100% 51% no-repeat,radial-gradient(circle at 100px 100%,transparent 10px,#000 10.5px) bottom/100% 51% no-repeat;
             mask:radial-gradient(circle at 100px 0,transparent 10px,#000 10.5px) top/100% 51% no-repeat,radial-gradient(circle at 100px 100%,transparent 10px,#000 10.5px) bottom/100% 51% no-repeat}
@@ -391,6 +419,7 @@ function seed() {
     td('Swipe across this line to cross it off →', { star: true }),
     td('…or tap the little box in the margin'),
     td('Double-click any line to rewrite it'),
+    td('Grocery run (tap the little list icon)', { subs: ['Milk', 'Eggs', 'Coffee'].map(text => ({ id: uid(), text, done: null })) }),
     td('This one is done already, tap its box to un-cross it', { done: now - 3600e3 * 30 }),
   ];
   const ch = (text, freq, n) => ({ id: uid(), text, freq, n, history: [], created: now });
@@ -422,7 +451,9 @@ const ui = {
   openWeek: null, scrollWeek: true,
   choreFreq: 'weekly', choreN: 3,
   lastDue: null, justAdded: null,
+  openLists: new Set((() => { try { return JSON.parse(localStorage.getItem('crossedoff.lists')) || []; } catch (e) { return []; } })()),
 };
+const saveLists = () => localStorage.setItem('crossedoff.lists', JSON.stringify([...ui.openLists]));
 const T = () => ymd(today());
 const bump = n => { const k = T(); state.tally[k] = Math.max(0, (state.tally[k] || 0) + n); };
 
@@ -572,6 +603,14 @@ function setDone(kind, id, val) {
 function findItem(kind, id) {
   return (kind === 'todo' ? state.todos : kind === 'chore' ? state.chores : state.deadlines).find(x => x.id === id);
 }
+// a list item counts as crossed until its chore comes due again, then the list starts fresh
+function subOn(kind, item, s) {
+  if (!s.done) return false;
+  if (kind !== 'chore') return true;
+  const last = [...item.history].sort().pop();
+  return !last || choreInfo(item).satisfied || ymd(new Date(s.done)) > last;
+}
+const subCount = (kind, x) => `${(x.subs || []).filter(s => subOn(kind, x, s)).length}/${(x.subs || []).length}`;
 function removeItem(kind, id) {
   const key = kind === 'todo' ? 'todos' : kind === 'chore' ? 'chores' : 'deadlines';
   const index = state[key].findIndex(x => x.id === id);
@@ -706,29 +745,41 @@ function cleanSlate() {
 }
 
 /* ═════════════ templates ═════════════ */
-function itemHTML({ kind, id, text, done, meta = '' }) {
+const LIST_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h.01M6 4h8M2 8h.01M6 8h8M2 12h.01M6 12h8"/></svg>';
+function listHTML(kind, x) {
+  const subs = x.subs || [], open = ui.openLists.has(x.id);
+  const btn = `<button class="lst${subs.length ? ' has' : ''}${open ? ' on' : ''}" data-act="list" aria-expanded="${open}" aria-label="List" title="${subs.length ? 'Open the list' : 'Start a list inside this line'}">${LIST_SVG}${subs.length ? `<span class="lst-n">${subCount(kind, x)}</span>` : ''}</button>`;
+  if (!open) return { btn, list: '' };
+  const rows = subs.map(s => {
+    const on = subOn(kind, x, s);
+    return `<li class="sub${on ? ' on' : ''}" data-act="sub" data-sub="${s.id}" role="checkbox" aria-checked="${on}" tabindex="0"><span class="sub-box">${boxSVG(s.id)}</span><span class="sub-txt"><span>${esc(s.text)}</span></span><button class="del" data-act="subdel" aria-label="Remove from list">${DEL_SVG}</button></li>`;
+  }).join('');
+  return { btn, list: `<ul class="subs">${rows}<li class="sub-new"><input class="write sub-in" placeholder="add to the list… commas add several" maxlength="200" autocomplete="off" enterkeyhint="done"><button class="sub-plus" data-act="subadd" aria-label="Add to list">+</button></li></ul>` };
+}
+function itemHTML({ kind, id, text, done, meta = '', item }) {
+  const L = listHTML(kind, item);
   return `<li class="item${done ? ' is-done' : ''}${ui.justAdded === id ? ' fresh' : ''}" data-kind="${kind}" data-id="${id}">
     <button class="box" aria-label="${done ? 'Un-cross' : 'Cross off'}: ${esc(text)}">${boxSVG(id)}</button>
     <div class="wrap"><span class="txt">${esc(text)}</span><svg class="strike" aria-hidden="true"><path/></svg></div>
-    <span class="meta">${meta}</span>
-    <button class="del" data-act="del" aria-label="Delete" title="crumple & toss">${DEL_SVG}</button></li>`;
+    <span class="meta">${L.btn}${meta}</span>
+    <button class="del" data-act="del" aria-label="Delete" title="crumple & toss">${DEL_SVG}</button>${L.list}</li>`;
 }
 function todoItem(x) {
   const when = x.done ? `<span>${isToday(x.done) ? 'today' : fmtShort(new Date(x.done))}</span>` : '';
   const star = x.done ? '' : `<button class="star${x.star ? ' on' : ''}" data-act="star" title="${x.star ? 'Unpin' : 'Pin to top'}" aria-label="Pin">✱</button>`;
-  return itemHTML({ kind: 'todo', id: x.id, text: x.text, done: !!x.done, meta: star + when });
+  return itemHTML({ kind: 'todo', id: x.id, text: x.text, done: !!x.done, meta: star + when, item: x });
 }
 function choreItem(c) {
   const i = choreInfo(c);
   const status = i.late ? `<span class="tag lv-late">${i.label}</span>` : `<span>${i.label}</span>`;
   const streak = i.streak >= 2 ? `<span class="streak">${i.streak} in a row</span>` : '';
-  return itemHTML({ kind: 'chore', id: c.id, text: c.text, done: i.satisfied, meta: `<span class="freq">${freqLabel(c)}</span>${status}${streak}` });
+  return itemHTML({ kind: 'chore', id: c.id, text: c.text, done: i.satisfied, meta: `<span class="freq">${freqLabel(c)}</span>${status}${streak}`, item: c });
 }
 function deadlineItem(d) {
   let meta;
   if (d.done) meta = `<span class="tag ${metLate(d) ? 'lv-latemet' : 'lv-met'}">${metLate(d) ? 'late but done' : 'met'}</span><span>${fmtShort(parse(d.due))}</span>`;
   else { const i = dlInfo(d); meta = `<span class="tag lv-${i.level}">${i.label}</span><span>${fmtShort(parse(d.due))}</span>`; }
-  return itemHTML({ kind: 'deadline', id: d.id, text: d.text, done: !!d.done, meta });
+  return itemHTML({ kind: 'deadline', id: d.id, text: d.text, done: !!d.done, meta, item: d });
 }
 const openCount = list => list.filter(x => !$$isDone(x)).length;
 function $$isDone(x) { return x.history ? choreInfo(x).satisfied : !!x.done; }
@@ -889,7 +940,11 @@ function render() {
 }
 function scheduleRender(ms = 1400) {
   clearTimeout(renderTimer);
-  renderTimer = setTimeout(() => { if (drag || editing) return scheduleRender(500); render(); }, ms);
+  renderTimer = setTimeout(() => {
+    const a = document.activeElement;
+    if (drag || editing || (a && a.matches('.sub-in') && a.value)) return scheduleRender(500);
+    render();
+  }, ms);
 }
 function go(view) {
   if (!V[view]) return;
@@ -951,6 +1006,30 @@ function addItem(kind) {
   const again = $(`[data-add="${kind}"]`, page); if (again) again.focus({ preventScroll: true });
 }
 
+/* lists inside a line */
+function toggleSub(li, row) {
+  const { kind, id } = li.dataset, x = findItem(kind, id); if (!x) return;
+  const s = (x.subs || []).find(s => s.id === row.dataset.sub); if (!s) return;
+  const on = !row.classList.contains('on');
+  if (on) { s.done = Date.now(); bump(1); Sound.scratch(0.16); buzz(8); }
+  else { if (isToday(s.done)) bump(-1); s.done = null; Sound.erase(); }
+  row.classList.toggle('on', on); row.setAttribute('aria-checked', on);
+  save(); renderMast();
+  const n = $('.lst-n', li); if (n) n.textContent = subCount(kind, x);
+  // last thing on the list crossed → the line itself is done
+  const idle = () => li.isConnected && !li.classList.contains('is-done') && !li.classList.contains('busy');
+  if (on && x.subs.every(q => subOn(kind, x, q)) && idle()) setTimeout(() => { if (idle()) cross(li); }, 420);
+}
+function addSub(li) {
+  const inp = $('.sub-in', li), { kind, id } = li.dataset, x = findItem(kind, id); if (!inp || !x) return;
+  const parts = inp.value.split(',').map(t => t.trim().replace(/\s+/g, ' ')).filter(Boolean);
+  if (!parts.length) { inp.classList.remove('shake'); void inp.offsetWidth; inp.classList.add('shake'); inp.focus(); return; }
+  x.subs = x.subs || [];
+  parts.forEach(text => x.subs.push({ id: uid(), text, done: null }));
+  save(); Sound.tick(); render();
+  const again = $(`.item[data-id="${id}"] .sub-in`, page); if (again) again.focus({ preventScroll: true });
+}
+
 function startEdit(txt) {
   const li = txt.closest('.item'); if (!li || li.classList.contains('busy')) return;
   const orig = txt.textContent; editing = true;
@@ -997,6 +1076,17 @@ page.addEventListener('click', e => {
     }, 380);
   } else if (act === 'star') {
     const x = findItem('todo', li.dataset.id); x.star = !x.star; save(); Sound.tick(); render();
+  } else if (act === 'list') {
+    const id = li.dataset.id, was = ui.openLists.has(id);
+    was ? ui.openLists.delete(id) : ui.openLists.add(id);
+    saveLists(); Sound.tick(); render();
+    const x = findItem(li.dataset.kind, id), inp = $(`.item[data-id="${id}"] .sub-in`, page);
+    if (!was && inp && x && !(x.subs || []).length) inp.focus({ preventScroll: true });
+  } else if (act === 'sub') toggleSub(li, el);
+  else if (act === 'subadd') addSub(li);
+  else if (act === 'subdel') {
+    const x = findItem(li.dataset.kind, li.dataset.id), sid = el.closest('.sub').dataset.sub;
+    if (x && x.subs) { x.subs = x.subs.filter(s => s.id !== sid); save(); Sound.crumple(); render(); }
   } else if (act === 'add') addItem(el.dataset.kind);
   else if (act === 'freq') { ui.choreFreq = el.dataset.freq; Sound.tick(); render(); const i = $('[data-add="chore"]', page); i && i.focus({ preventScroll: true }); }
   else if (act === 'tear') {
@@ -1021,7 +1111,9 @@ page.addEventListener('keydown', e => {
   else if (e.key === 'Enter' && e.target.matches('.due-in')) { e.preventDefault(); addItem('deadline'); }
   else if (e.key === 'Enter' && e.target.matches('.wk-in')) { e.preventDefault(); saveWeek(e.target.closest('.wk-edit').dataset.week); }
   else if (e.key === 'Escape' && e.target.matches('.wk-in')) { ui.openWeek = null; render(); }
-  else if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.wk')) { e.preventDefault(); e.target.click(); }
+  else if (e.key === 'Enter' && e.target.matches('.sub-in')) { e.preventDefault(); addSub(e.target.closest('.item')); }
+  else if (e.key === 'Escape' && e.target.matches('.sub-in')) e.target.blur();
+  else if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.wk, .sub')) { e.preventDefault(); e.target.click(); }
 });
 page.addEventListener('dblclick', e => { const t = e.target.closest('.txt'); if (t) startEdit(t); });
 
